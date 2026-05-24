@@ -145,11 +145,13 @@ export default function ReviewDetailPage({
   };
 
   useEffect(() => {
+    let mounted = true;
     let sseCleanup: (() => void) | null = null;
 
     const init = async () => {
       try {
         const data = await getReview(params.id);
+        if (!mounted) return;
         setReview(data);
         setLoading(false);
 
@@ -171,6 +173,7 @@ export default function ReviewDetailPage({
               // Fetch final review state
               setTimeout(async () => {
                 const final = await getReview(params.id);
+                if (!mounted) return;
                 setReview(final);
                 setAgentStates({
                   "Security Agent": "done",
@@ -201,9 +204,10 @@ export default function ReviewDetailPage({
 
     init();
     return () => {
+      mounted = false;
       sseCleanup?.();
     };
-  }, [params.id]);
+  }, [params.id, addEvent]);
 
   const isLive = review?.status === "pending" || review?.status === "running";
   const allIssues = (review?.agent_results || []).flatMap(
