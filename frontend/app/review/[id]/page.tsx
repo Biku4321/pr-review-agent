@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { getReview, createSSEConnection } from "../../lib/api";
+import { getReview, createSSEConnection } from "../../../lib/api";
 import Link from "next/link";
 
 const SEV_STYLE: Record<string, string> = {
