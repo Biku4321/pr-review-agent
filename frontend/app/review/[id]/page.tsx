@@ -39,6 +39,7 @@ function AgentCard({
   name,
   icon,
   state,
+  result,
 }: {
   name: string;
   icon: string;
