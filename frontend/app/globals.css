@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0a0e17;
+  --surface: #111827;
+  --border: #1f2937;
+}
+
+body {
+  background: var(--bg);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+
+/* Code-style inputs */
+input[type="text"], input[type="number"] {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Scan line effect on status badges */
+.scan-badge {
+  position: relative;
+  overflow: hidden;
+}
+.scan-badge::after {
+  content: '';
+  position: absolute;
+  top: -100%;
+  left: 0;
+  right: 0;
+  height: 100%;
+  background: linear-gradient(transparent 40%, rgba(34,211,238,0.1) 50%, transparent 60%);
+  animation: scan 2s linear infinite;
+}
+@keyframes scan {
+  from { top: -100%; }
+  to { top: 200%; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+.font-mono { font-family: 'JetBrains Mono', monospace; }
