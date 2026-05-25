@@ -5,10 +5,11 @@ Usage: cd backend && python test_local.py
 import asyncio
 import sys
 import os
+from dotenv import load_dotenv
+
 sys.path.insert(0, os.path.dirname(__file__))
-
+load_dotenv(".env")
 from agents.orchestrator import run_review
-
 SAMPLE_FILES = [
     {
         "filename": "app/users.py",

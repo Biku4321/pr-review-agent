@@ -1,9 +1,10 @@
 import asyncio
 import time
 import os
-from typing import TypedDict, List, Optional
+from typing import TypedDict, List, Optional, Annotated
 from langgraph.graph import StateGraph, END
 import google.generativeai as genai
+import operator
 
 from agents.security_agent import run_security_agent
 from agents.performance_agent import run_performance_agent
@@ -13,16 +14,25 @@ from models.schemas import AgentResult, ReviewIssue
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 
 
+# ── Helper reducer: keep last non-None value ──────────────────────────────────
+def _keep_last(a, b):
+    return b if b is not None else a
+
+
+# ── State — parallel keys use Annotated reducer ───────────────────────────────
 class ReviewState(TypedDict):
+    # Read-only inputs (set once by fetch_data, never written by parallel nodes)
     repo: str
     pr_number: int
     review_id: str
     files: List[dict]
     pr_metadata: dict
-    security_result: Optional[AgentResult]
-    performance_result: Optional[AgentResult]
-    quality_result: Optional[AgentResult]
-    all_issues: List[ReviewIssue]
+    # Parallel agent results — each node writes ONLY its own key
+    security_result: Annotated[Optional[AgentResult], _keep_last]
+    performance_result: Annotated[Optional[AgentResult], _keep_last]
+    quality_result: Annotated[Optional[AgentResult], _keep_last]
+    # Written by synthesize node only
+    all_issues: Annotated[List[ReviewIssue], operator.add]
     overall_summary: str
     total_time_ms: int
     error: Optional[str]
@@ -36,16 +46,17 @@ async def _publish(review_id: str, event_type: str, data: dict):
         pass
 
 
-async def fetch_data_node(state: ReviewState) -> ReviewState:
+# ── Nodes — each returns ONLY the keys it owns ────────────────────────────────
+async def fetch_data_node(state: ReviewState) -> dict:
     await _publish(state["review_id"], "review_started", {
         "repo": state["repo"],
         "pr_number": state["pr_number"],
         "files_count": len(state["files"]),
     })
-    return state
+    return {"repo": state["repo"]}  # nothing to update — inputs already in state
 
 
-async def security_node(state: ReviewState) -> ReviewState:
+async def security_node(state: ReviewState) -> dict:
     rid = state["review_id"]
     await _publish(rid, "agent_started", {"agent": "Security Agent", "icon": "🔒"})
     try:
@@ -66,15 +77,15 @@ async def security_node(state: ReviewState) -> ReviewState:
             "summary": result.summary,
             "execution_time_ms": result.execution_time_ms,
         })
-        return {**state, "security_result": result}
     except Exception as e:
         await _publish(rid, "agent_completed", {"agent": "Security Agent", "error": str(e)})
-        return {**state, "security_result": AgentResult(
-            agent_name="Security Agent", issues=[], summary=f"Error: {e}", execution_time_ms=0
-        )}
+        result = AgentResult(agent_name="Security Agent", issues=[], summary=f"Error: {e}", execution_time_ms=0)
+
+    return {"security_result": result}   # ← only own key
 
 
-async def performance_node(state: ReviewState) -> ReviewState:
+async def performance_node(state: ReviewState) -> dict:
+    await asyncio.sleep(2)
     rid = state["review_id"]
     await _publish(rid, "agent_started", {"agent": "Performance Agent", "icon": "⚡"})
     try:
@@ -95,15 +106,15 @@ async def performance_node(state: ReviewState) -> ReviewState:
             "summary": result.summary,
             "execution_time_ms": result.execution_time_ms,
         })
-        return {**state, "performance_result": result}
     except Exception as e:
         await _publish(rid, "agent_completed", {"agent": "Performance Agent", "error": str(e)})
-        return {**state, "performance_result": AgentResult(
-            agent_name="Performance Agent", issues=[], summary=f"Error: {e}", execution_time_ms=0
-        )}
+        result = AgentResult(agent_name="Performance Agent", issues=[], summary=f"Error: {e}", execution_time_ms=0)
+
+    return {"performance_result": result}   # ← only own key
 
 
-async def quality_node(state: ReviewState) -> ReviewState:
+async def quality_node(state: ReviewState) -> dict:
+    await asyncio.sleep(2)
     rid = state["review_id"]
     await _publish(rid, "agent_started", {"agent": "Quality Agent", "icon": "🧹"})
     try:
@@ -124,15 +135,15 @@ async def quality_node(state: ReviewState) -> ReviewState:
             "summary": result.summary,
             "execution_time_ms": result.execution_time_ms,
         })
-        return {**state, "quality_result": result}
     except Exception as e:
         await _publish(rid, "agent_completed", {"agent": "Quality Agent", "error": str(e)})
-        return {**state, "quality_result": AgentResult(
-            agent_name="Quality Agent", issues=[], summary=f"Error: {e}", execution_time_ms=0
-        )}
+        result = AgentResult(agent_name="Quality Agent", issues=[], summary=f"Error: {e}", execution_time_ms=0)
+
+    return {"quality_result": result}   # ← only own key
 
 
-async def synthesize_node(state: ReviewState) -> ReviewState:
+async def synthesize_node(state: ReviewState) -> dict:
+    await asyncio.sleep(2)
     rid = state["review_id"]
     await _publish(rid, "synthesizing", {"message": "Generating executive summary..."})
 
@@ -161,7 +172,7 @@ High: {sum(1 for i in all_issues if i.severity.value == 'high')}
 
 Write a 2-3 sentence executive summary. Be direct and actionable. No markdown."""
 
-    model = genai.GenerativeModel(model_name="gemini-2.5-flash")
+    model = genai.GenerativeModel(model_name="gemini-2.5-flash-lite")
     response = await model.generate_content_async(prompt)
     summary = response.text.strip()
 
@@ -172,9 +183,13 @@ Write a 2-3 sentence executive summary. Be direct and actionable. No markdown.""
         "summary": summary,
     })
 
-    return {**state, "all_issues": all_issues, "overall_summary": summary}
+    return {
+        "all_issues": all_issues,
+        "overall_summary": summary,
+    }
 
 
+# ── Graph ─────────────────────────────────────────────────────────────────────
 def build_review_graph():
     graph = StateGraph(ReviewState)
     graph.add_node("fetch_data", fetch_data_node)
@@ -193,6 +208,7 @@ def build_review_graph():
     return graph.compile()
 
 
+# ── Entry point ───────────────────────────────────────────────────────────────
 async def run_review(
     repo: str,
     pr_number: int,

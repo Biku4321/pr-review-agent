@@ -60,7 +60,7 @@ async def run_quality_agent(
         code_context = code_context[:80000] + "\n... [truncated]"
 
     model = genai.GenerativeModel(
-        model_name="gemini-2.5-pro",
+        model_name="gemini-2.5-flash-lite",
         system_instruction=QUALITY_SYSTEM_PROMPT,
     )
     response = await model.generate_content_async(

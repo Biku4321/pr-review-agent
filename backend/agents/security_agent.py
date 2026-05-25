@@ -70,7 +70,7 @@ async def run_security_agent(
     user_message = f"{rag_context}\n\n---\n\n## Code to Review\n\n{code_context}"
 
     model = genai.GenerativeModel(
-        model_name="gemini-2.5-pro",
+        model_name="gemini-2.5-flash-lite",
         system_instruction=SECURITY_SYSTEM_PROMPT,
     )
     response = await model.generate_content_async(user_message)
